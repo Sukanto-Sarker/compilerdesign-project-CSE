@@ -1,4 +1,4 @@
-from parser import (
+from .parser import (
     ProgramNode,
     AssignmentNode,
     PrintNode,
