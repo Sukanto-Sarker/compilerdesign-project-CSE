@@ -1,24 +1,23 @@
-import sys
 import os
+import sys
 
 from flask import Flask, request, jsonify
 
+# --------------------------------------------------
+# Project root
+# --------------------------------------------------
 
-# ============================================================
-# Add project root to Python path
-# ============================================================
-
-PROJECT_ROOT = os.path.dirname(
+ROOT_DIR = os.path.dirname(
     os.path.dirname(os.path.abspath(__file__))
 )
 
-if PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, PROJECT_ROOT)
+if ROOT_DIR not in sys.path:
+    sys.path.insert(0, ROOT_DIR)
 
 
-# ============================================================
-# Import Compiler Modules
-# ============================================================
+# --------------------------------------------------
+# Compiler imports
+# --------------------------------------------------
 
 from compiler.lexer import Lexer, LexerError
 from compiler.parser import Parser, ParserError
@@ -26,29 +25,16 @@ from compiler.semantic import SemanticAnalyzer, SemanticError
 from compiler.intermediate import IntermediateCodeGenerator
 
 
-# ============================================================
-# Flask Application
-# ============================================================
+# --------------------------------------------------
+# Flask application
+# --------------------------------------------------
 
 app = Flask(__name__)
 
 
-# ============================================================
-# Token → Dictionary
-# ============================================================
-
-def token_to_dict(token):
-    return {
-        "type": token.type,
-        "value": token.value,
-        "line": token.line,
-        "column": token.column
-    }
-
-
-# ============================================================
-# AST → Dictionary
-# ============================================================
+# --------------------------------------------------
+# AST conversion
+# --------------------------------------------------
 
 def ast_to_dict(node):
 
@@ -75,7 +61,9 @@ def ast_to_dict(node):
         result["right"] = ast_to_dict(node.right)
 
     if hasattr(node, "expression"):
-        result["expression"] = ast_to_dict(node.expression)
+        result["expression"] = ast_to_dict(
+            node.expression
+        )
 
     if hasattr(node, "statements"):
         result["statements"] = [
@@ -86,9 +74,23 @@ def ast_to_dict(node):
     return result
 
 
-# ============================================================
-# Compiler Pipeline
-# ============================================================
+# --------------------------------------------------
+# Token conversion
+# --------------------------------------------------
+
+def token_to_dict(token):
+
+    return {
+        "type": token.type,
+        "value": token.value,
+        "line": token.line,
+        "column": token.column
+    }
+
+
+# --------------------------------------------------
+# Compiler
+# --------------------------------------------------
 
 def compile_source(source):
 
@@ -114,9 +116,9 @@ def compile_source(source):
     }
 
 
-    # ========================================================
-    # 1. Lexical Analysis
-    # ========================================================
+    # ==================================================
+    # 1. LEXICAL ANALYSIS
+    # ==================================================
 
     try:
 
@@ -135,19 +137,19 @@ def compile_source(source):
 
     except LexerError as error:
 
+        result["phases"]["lexical"] = "error"
+
         result["error"] = {
             "type": "Lexical Error",
             "message": str(error)
         }
 
-        result["phases"]["lexical"] = "error"
-
         return result
 
 
-    # ========================================================
-    # 2. Syntax Analysis
-    # ========================================================
+    # ==================================================
+    # 2. SYNTAX ANALYSIS
+    # ==================================================
 
     try:
 
@@ -162,19 +164,19 @@ def compile_source(source):
 
     except ParserError as error:
 
+        result["phases"]["syntax"] = "error"
+
         result["error"] = {
             "type": "Syntax Error",
             "message": str(error)
         }
 
-        result["phases"]["syntax"] = "error"
-
         return result
 
 
-    # ========================================================
-    # 3. Semantic Analysis
-    # ========================================================
+    # ==================================================
+    # 3. SEMANTIC ANALYSIS
+    # ==================================================
 
     try:
 
@@ -189,19 +191,19 @@ def compile_source(source):
 
     except SemanticError as error:
 
+        result["phases"]["semantic"] = "error"
+
         result["error"] = {
             "type": "Semantic Error",
             "message": str(error)
         }
 
-        result["phases"]["semantic"] = "error"
-
         return result
 
 
-    # ========================================================
-    # 4. Intermediate Code Generation
-    # ========================================================
+    # ==================================================
+    # 4. INTERMEDIATE CODE GENERATION
+    # ==================================================
 
     try:
 
@@ -213,39 +215,35 @@ def compile_source(source):
 
         result["phases"]["intermediate"] = "success"
 
-
     except Exception as error:
+
+        result["phases"]["intermediate"] = "error"
 
         result["error"] = {
             "type": "Intermediate Code Error",
             "message": str(error)
         }
 
-        result["phases"]["intermediate"] = "error"
-
         return result
 
 
-    # ========================================================
-    # Compilation Successful
-    # ========================================================
+    # ==================================================
+    # SUCCESS
+    # ==================================================
 
     result["success"] = True
 
     return result
 
 
-# ============================================================
-# API Route
-# ============================================================
+# --------------------------------------------------
+# API route
+# --------------------------------------------------
 
-@app.route("/", methods=["GET", "POST", "OPTIONS"])
+@app.route("/api", methods=["POST", "OPTIONS"])
 def compile_api():
 
-    # --------------------------------------------------------
-    # CORS / Preflight Request
-    # --------------------------------------------------------
-
+    # CORS preflight
     if request.method == "OPTIONS":
 
         response = jsonify({
@@ -253,63 +251,50 @@ def compile_api():
         })
 
         response.headers["Access-Control-Allow-Origin"] = "*"
-        response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+        response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
         response.headers["Access-Control-Allow-Headers"] = "Content-Type"
 
         return response
 
 
-    # --------------------------------------------------------
-    # GET Request
-    # --------------------------------------------------------
-
-    if request.method == "GET":
-
-        response = jsonify({
-            "success": True,
-            "message": "MiniLang Compiler API is running."
-        })
-
-        response.headers["Access-Control-Allow-Origin"] = "*"
-
-        return response
-
-
-    # --------------------------------------------------------
-    # POST Request
-    # --------------------------------------------------------
-
     try:
 
-        data = request.get_json(silent=True) or {}
+        data = request.get_json(silent=True)
+
+        if not data:
+
+            return jsonify({
+                "success": False,
+                "error": {
+                    "type": "Request Error",
+                    "message": "Invalid JSON request."
+                }
+            }), 400
+
 
         source = data.get("source", "")
 
+        if not isinstance(source, str):
 
-        # ----------------------------------------------------
-        # Empty Source Check
-        # ----------------------------------------------------
-
-        if not isinstance(source, str) or not source.strip():
-
-            response = jsonify({
+            return jsonify({
                 "success": False,
                 "error": {
-                    "type": "Input Error",
+                    "type": "Request Error",
+                    "message": "Source code must be a string."
+                }
+            }), 400
+
+
+        if not source.strip():
+
+            return jsonify({
+                "success": False,
+                "error": {
+                    "type": "Request Error",
                     "message": "Source code is empty."
                 }
-            })
+            }), 400
 
-            response.status_code = 400
-
-            response.headers["Access-Control-Allow-Origin"] = "*"
-
-            return response
-
-
-        # ----------------------------------------------------
-        # Compile Source Code
-        # ----------------------------------------------------
 
         result = compile_source(source)
 
@@ -320,10 +305,6 @@ def compile_api():
 
         return response
 
-
-    # --------------------------------------------------------
-    # Unexpected Server Error
-    # --------------------------------------------------------
 
     except Exception as error:
 
@@ -340,3 +321,29 @@ def compile_api():
         response.headers["Access-Control-Allow-Origin"] = "*"
 
         return response
+
+
+# --------------------------------------------------
+# Health check
+# --------------------------------------------------
+
+@app.route("/api", methods=["GET"])
+def api_health():
+
+    return jsonify({
+        "success": True,
+        "message": "MiniLang compiler API is running."
+    })
+
+
+# --------------------------------------------------
+# Local development
+# --------------------------------------------------
+
+if __name__ == "__main__":
+
+    app.run(
+        host="0.0.0.0",
+        port=5000,
+        debug=True
+    )
